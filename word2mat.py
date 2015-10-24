@@ -1,6 +1,4 @@
-#
-:q
-*- coding: utf-8 -*-
+#*- coding: utf-8 -*-
 import heapq
 import logging
 import numpy as np
