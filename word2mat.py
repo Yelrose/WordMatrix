@@ -197,9 +197,7 @@ class Word2Mat:
                 self.tot_word += 1
                 self.vocab.AddWord(word)
         self.vocab.get_frequence()
-        print 'before',len(self.vocab.vocab)
         self.vocab.remove_infrequence(self.min_count)
-        print 'after',len(self.vocab.vocab)
         if self.hs:
             self.vocab.build_tree()
         if self.negative > 0:
@@ -234,9 +232,11 @@ class Word2Mat:
                 job = job_queue.get()
                 item,alpha = job
                 if item is None:
+                    #logging.info("trainning finish")
                     break
                 word = 0
                 if self.sg:
+                    #logging.info("training %s"%item)
                     word += train_sg_sentence(self,item,alpha)
                 else:
                         #word += train_sentence_cbow(self,sentence,alpha)
@@ -259,7 +259,7 @@ class Word2Mat:
                         logging.info("PROGRESS: at %.2f%% ,%.0f words/s"%
                             (100.0*count_word/tot_word,count_word/elapsed))
                     next_report = elapsed + 1
-                    if count_word > tot_word: break
+                    if count_word >=tot_word: break
                 except Empty:
                     continue
 
@@ -349,7 +349,7 @@ if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sentences = [[1,2,3,3,4,5,5,5,555,5],[2,3,4],[5,5,6,77,7,7,8,9]]
     model = Word2Mat(sentences,iter=10,size=5,topic_num=2,min_count=0,workers=3)
-    model.save()
+    #model.save()
     #lda_model = ldamodel.LdaModel(corpus = BagOfWordSentences(sentences,vocab),num_topics=3)
 
 
