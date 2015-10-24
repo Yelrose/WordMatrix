@@ -1,4 +1,6 @@
-#-*- coding: utf-8 -*-
+#
+:q
+*- coding: utf-8 -*-
 import heapq
 import logging
 import numpy as np
@@ -145,8 +147,6 @@ class Vocab:
             self.vocab[right].code = np.array(list(self.vocab[idx].code) + [1],dtype='uint8')
             self.vocab[left].point = self.vocab[idx].point + [i]
             self.vocab[right].point = self.vocab[idx].point + [i]
-        for i in xrange(self.vocab_sz):
-            print i,self.vocab[i].code
 
 
     def get_frequence(self):
@@ -199,7 +199,9 @@ class Word2Mat:
                 self.tot_word += 1
                 self.vocab.AddWord(word)
         self.vocab.get_frequence()
+        print 'before',len(self.vocab.vocab)
         self.vocab.remove_infrequence(self.min_count)
+        print 'after',len(self.vocab.vocab)
         if self.hs:
             self.vocab.build_tree()
         if self.negative > 0:
@@ -229,6 +231,7 @@ class Word2Mat:
             '''
                 get jobs in job queue
             '''
+
             while True:
                 job = job_queue.get()
                 item,alpha = job
@@ -236,7 +239,7 @@ class Word2Mat:
                     break
                 word = 0
                 if self.sg:
-                    word += train_sg_sentence(self,sentence,alpha)
+                    word += train_sg_sentence(self,item,alpha)
                 else:
                         #word += train_sentence_cbow(self,sentence,alpha)
                     print 'train cbow'
@@ -328,7 +331,7 @@ class RepeatSentences:
 
     def __iter__(self):
         for i in xrange(self.iter):
-            for sentence in sentences:
+            for sentence in self.sentences:
                 yield sentence
 
 
