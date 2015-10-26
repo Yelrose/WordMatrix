@@ -259,7 +259,7 @@ class Word2Mat:
                     if elapsed >= next_report:
                         logging.info("PROGRESS: at %.2f%% ,%.0f words/s"%
                             (100.0*count_word/tot_word,count_word/elapsed))
-                    next_report = elapsed + 1
+                        next_report = elapsed + 1
                     if count_word >=tot_word: break
                 except Empty:
                     continue
