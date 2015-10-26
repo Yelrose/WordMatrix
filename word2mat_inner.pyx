@@ -35,17 +35,16 @@ ctypedef double (*snrm2_ptr) (const int *N, const float *X, const int *incX) nog
 ctypedef void (*sscal_ptr) (const int *N, const float *alpha, const float *X, const int *incX) nogil
 ctypedef void (*sgemv_ptr) (const char* TRANS,const int *M,const int *N,const float*  alpha,const float *A,const int *LDA,const float * X,const int *incX,const float *beta,float * Y,const int * incY) nogil
 ctypedef void (*sger_ptr) (const int * M,const int * N,const float * alpha,const float *X,const int *incX,float * Y,const int* incY,const float * A,const int* LDA) nogil
-ctypedef unsigned long long (*fast_sentence_sg_neg_ptr) (
-    const int negative, np.uint32_t *table, unsigned long long table_len,
-    REAL_t *syn0, REAL_t *syn1neg, const int size, const np.uint32_t word_index,
-    const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work,
-    unsigned long long next_random) nogil
-
 ctypedef void (*fast_sentence_sg_hs_ptr)(
     const np.uint32_t * word_point,const np.uint8_t * word_code, const int codelen,
     REAL_t * syn0,const REAL_t * context_vector,REAL_t * syn1, const int vector_size,const int topic_size,
     const np.uint32_t word2_index,const REAL_t alpha,REAL_t * work,REAL_t * neu1) nogil
 
+ctypedef unsigned long long (*fast_sentence_sg_neg_ptr)(
+    const int negative, np.uint32_t *table, unsigned long long table_len, REAL_t * syn0,REAL_t * syn1neg, const int vector_size,const int topic_size, REAL_t * context_vector,
+    const np.uint32_t word_index, const np.uint32_t word2_index,const REAL_t alpha, REAL_t * work,REAL_t* neu1,unsigned long long next_random
+) nogil
+ 
 
 cdef scopy_ptr scopy=<scopy_ptr>PyCObject_AsVoidPtr(fblas.scopy._cpointer)  # y = x
 cdef saxpy_ptr saxpy=<saxpy_ptr>PyCObject_AsVoidPtr(fblas.saxpy._cpointer)  # y += alpha * x
@@ -56,6 +55,7 @@ cdef sscal_ptr sscal=<sscal_ptr>PyCObject_AsVoidPtr(fblas.sscal._cpointer) # x =
 cdef sgemv_ptr sgemv=<sgemv_ptr>PyCObject_AsVoidPtr(fblas.sgemv._cpointer)
 cdef sger_ptr sger = <sger_ptr>PyCObject_AsVoidPtr(fblas.sger._cpointer)
 cdef fast_sentence_sg_hs_ptr fast_sentence_sg_hs
+cdef fast_sentence_sg_neg_ptr fast_sentence_sg_neg
 
 DEF EXP_TABLE_SIZE = 1000
 DEF MAX_EXP = 6
@@ -87,6 +87,40 @@ cdef void fast_sentence0_sg_hs(
         saxpy(&vector_size,&g,&syn1[row2],&ONE,work,&ONE)
         saxpy(&vector_size,&g,neu1,&ONE,&syn1[row2],&ONE)
     sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
+
+cdef unsigned long long fast_sentence0_sg_neg(
+    const int negative, np.uint32_t *table, unsigned long long table_len, REAL_t * syn0,REAL_t * syn1neg, const int vector_size,const int topic_size, REAL_t * context_vector,
+    const np.uint32_t word_index, const np.uint32_t word2_index,const REAL_t alpha, REAL_t * work,REAL_t* neu1,unsigned long long next_random
+) nogil:
+    cdef long long a
+    cdef long long row1 = word2_index * vector_size * topic_size,row2
+    cdef unsigned long long modulo = 281474976710655ULL
+    cdef REAL_t f,g, label
+    cdef np.uint32_t target_index
+    cdef int d
+    memset(work,0,vector_size * cython.sizeof(REAL_t))
+    cdef char trans = <char> 't'
+    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ZEROF,neu1,&ONE)
+    for d in range(negative+1):
+        if d == 0:
+            target_index = word_index
+            label = ONEF
+        else:
+            target_index = table[(next_random >> 16) % table_len]
+            next_random = (next_random * <unsigned long long>25214903917ULL + 11) & modulo
+            if target_index  == word_index:
+                continue
+            label = <REAL_t > 0.0
+        row2 = target_index * vector_size
+        f = <REAL_t> dsdot(&vector_size,neu1,&ONE,&syn1neg[row2],&ONE)
+        if f <= - MAX_EXP or f >= MAX_EXP:
+            continue
+        g = (label - f) * alpha
+        saxpy(&vector_size,&g,&syn1neg[row2],&ONE,work,&ONE)
+        saxpy(&vector_size,&g,neu1,&ONE,&syn1neg[row2],&ONE)
+    sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
+
+
 
 def train_sentence_sg(model, sentence, alpha,_context_vector, _work,_neu1):
     cdef int hs = model.hs
@@ -165,8 +199,8 @@ def train_sentence_sg(model, sentence, alpha,_context_vector, _work,_neu1):
                     continue
                 if hs:
                     fast_sentence_sg_hs(points[i], codes[i], codelens[i], syn0, context_vector,syn1,vector_size, topic_size, word_index[j],  _alpha, work,neu1)
-            #if negative:
-                #    next_random = fast_sentence_sg_neg(negative, table, table_len, syn0, syn1neg, size, indexes[i], indexes[j], _alpha, work, next_random)
+                if negative:
+                    next_random = fast_sentence_sg_neg(negative, table, table_len, syn0, syn1neg, vector_size,topic_size,context_vector, word_index[i], word_index[j], _alpha, work, neu1,next_random)
     return result
 
 def init():
@@ -197,6 +231,8 @@ def init():
     d_res = dsdot(&size, x, &ONE, y, &ONE)
     p_res = <float *>&d_res
     fast_sentence_sg_hs =  fast_sentence0_sg_hs
+    fast_sentence_sg_neg =  fast_sentence0_sg_neg
+
     '''
     if (abs(d_res - expected) < 0.0001):
         fast_sentence_sg_hs = fast_sentence2_sg_hs
