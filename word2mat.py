@@ -290,8 +290,15 @@ class Word2Mat:
         logging.info('Training finish')
 
     def save(self):
-        cPickle.dump(self.syn0,open('./syn0.dmp','w'))
-        cPickle.dump(self.vocab.vocab[:self.vocab.vocab_sz],open('./vocab.dmp','w'))
+        fp = open('./syn0.dmp','w')
+        fp.write("%d %d %d\n" % (self.vocab.vocab_sz,self.topic_size,self.vector_size))
+        for i in xrange(self.vocab.vocab_sz):
+            word = self.vocab.vocab[i].word
+            array = self.syn0[i]
+            array = [str(wd) for wd in array]
+            array = ' '.join(array)
+            fp.write("%s %s\n"%(word,array))
+        fp.close()
         cPickle.dump(self.lda_model,open('./lda_model.dmp','w'))
 
 
@@ -350,7 +357,7 @@ if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sentences = [[1,2,3,3,4,5,5,5,555,5],[2,3,4],[5,5,6,77,7,7,8,9]]
     model = Word2Mat(sentences,iter=10,size=5,topic_num=2,min_count=0,workers=3)
-    #model.save()
+    model.save()
     #lda_model = ldamodel.LdaModel(corpus = BagOfWordSentences(sentences,vocab),num_topics=3)
 
 
