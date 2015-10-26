@@ -8,20 +8,13 @@ from Queue import Queue, Empty
 import threading
 import timeit
 import cPickle
+from word2mat_inner import train_sentence_sg as fast_train_sg
 
-def train_sg_sentence(model,sentence,alpha):
+def train_sg_sentence(model,sentence,alpha,context_vector,work=None):
     '''
     train a sentence get the window
     '''
-    tot_word = len(sentence)
-    word_vocabs = [model.vocab.words[w] for w in sentence if w in model.vocab.words]
-    word_vocabs = [w for w in word_vocabs if np.random.uniform(0,1) < 1 - np.sqrt(model.sampling/model.vocab.vocab[w].freq) ]
-    lda = model.lda_model[model.vocab.get_bag_of_word(sentence)]
-    context_vector = np.zeros(model.topic_size,dtype='float32')
-    for topic,pro in lda:
-        context_vector[topic] =  pro
-
-
+    word_vocabs = sentence
     for pos,word in enumerate(word_vocabs):
         reduced_window = np.random.randint(model.window)
         start = max(0,pos - model.window + reduced_window)
@@ -29,7 +22,7 @@ def train_sg_sentence(model,sentence,alpha):
         for pos2,word2 in enumerate(word_vocabs[start:end]):
             if pos2 == pos: continue
             train_sg_pair(model,word,word2,alpha,context_vector)
-    return tot_word
+
 
 
 
@@ -104,7 +97,7 @@ class Vocab:
             self.words[self.vocab[i].word] = i
 
     def build_table(self,sz = 100000000):
-        self.table = np.zeros(sz,'int')
+        self.table = np.zeros(sz,'uint32')
         tot = 0.
         for i in xrange(self.vocab_sz):
             tot += np.power(self.vocab[i].cn,0.75)
@@ -143,8 +136,8 @@ class Vocab:
             right = self.vocab[idx].right
             self.vocab[left].code = np.array(list(self.vocab[idx].code) + [0],dtype='uint8')
             self.vocab[right].code = np.array(list(self.vocab[idx].code) + [1],dtype='uint8')
-            self.vocab[left].point = self.vocab[idx].point + [i]
-            self.vocab[right].point = self.vocab[idx].point + [i]
+            self.vocab[left].point = np.array(list(self.vocab[idx].point)+[i],dtype='uint32')
+            self.vocab[right].point = np.array(list(self.vocab[idx].point)+[i],dtype='uint32')
 
 
     def get_frequence(self):
@@ -227,17 +220,25 @@ class Word2Mat:
             '''
                 get jobs in job queue
             '''
-
+            work = np.zeros(layer2sz,dtype='float32')
+            neu1 = np.zeros(layer2sz,dtype='float32')
             while True:
                 job = job_queue.get()
                 item,alpha = job
                 if item is None:
                     #logging.info("trainning finish")
                     break
-                word = 0
+                word = len(item)
+                word_vocabs = [self.vocab.words[w] for w in item if w in self.vocab.words]
+                word_vocabs = [w for w in word_vocabs if np.random.uniform(0,1) < 1 - np.sqrt(self.sampling/self.vocab.vocab[w].freq) ]
+                lda = self.lda_model[self.vocab.get_bag_of_word(item)]
+                context_vector = np.zeros(self.topic_size,dtype='float32')
+                for topic,pro in lda:
+                    context_vector[topic] =  pro
                 if self.sg:
                     #logging.info("training %s"%item)
-                    word += train_sg_sentence(self,item,alpha)
+                    #train_sg_sentence(self,word_vocabs,alpha,context_vector,work)
+                    fast_train_sg(self,word_vocabs,alpha,context_vector,work,neu1)
                 else:
                         #word += train_sentence_cbow(self,sentence,alpha)
                     print 'train cbow'
