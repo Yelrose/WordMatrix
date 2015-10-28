@@ -28,8 +28,8 @@ def train_sg_sentence(model,sentence,alpha,context_vector,work=None):
 
 
 def train_sg_pair(model,pos,target,alpha,context_vector):
-    wordmat = model.syn0[pos].reshape(model.vector_size,model.topic_size)
-    neu1 = wordmat.dot(context_vector)
+    wordmat = model.syn0[pos].reshape(model.topic_size,model.vector_size)
+    neu1 = wordmat.T.dot(context_vector)
     neu1e = np.zeros(neu1.shape)
     target_word = model.vocab.vocab[target]
 
@@ -53,7 +53,7 @@ def train_sg_pair(model,pos,target,alpha,context_vector):
         model.syn1neg[word_indices] += np.outer(gb,neu1)
         neu1e += np.dot(gb,l2b)
 
-    model.syn0[pos] += np.outer(neu1e,context_vector).reshape(model.vector_size*model.topic_size)
+    model.syn0[pos] += np.outer(context_vector,neu1e).reshape(model.vector_size*model.topic_size)
 
 
 class Word:
