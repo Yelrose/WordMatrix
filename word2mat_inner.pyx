@@ -75,9 +75,10 @@ cdef void fast_sentence0_sg_hs(
     cdef long long a,b
     cdef long long row1 =  word2_index * vector_size * topic_size
     cdef REAL_t f,g
-    cdef char trans = <char> 't'
+    cdef char trans = <char> 'c'
     memset(work,0,vector_size* cython.sizeof(REAL_t))
-    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ZEROF,neu1,&ONE)
+    memset(neu1,0,vector_size*cython.sizeof(REAL_t))
+    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
     for b in range(codelen):
         row2 = word_point[b] * vector_size
         f = <REAL_t>dsdot(&vector_size,neu1,&ONE,&syn1[row2],&ONE)
@@ -99,9 +100,10 @@ cdef unsigned long long fast_sentence0_sg_neg(
     cdef REAL_t f,g, label
     cdef np.uint32_t target_index
     cdef int d
-    memset(work,0,vector_size * cython.sizeof(REAL_t))
-    cdef char trans = <char> 't'
-    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ZEROF,neu1,&ONE)
+    memset(work,0,vector_size* cython.sizeof(REAL_t))
+    memset(neu1,0,vector_size*cython.sizeof(REAL_t))
+    cdef char trans = <char> 'c'
+    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
     for d in range(negative+1):
         if d == 0:
             target_index = word_index
