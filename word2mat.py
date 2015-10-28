@@ -223,7 +223,7 @@ class Word2Mat:
                         target_word = self.vocab.vocab[pos2]
                         l2a = deepcopy(self.syn1[target_word.point])
                         fa = 1.0 / (1.0 + np.exp(-np.dot(neu1,l2a.T)))
-                        loss += np.sum(np.log((1-target_word.code) * fa+target_word*(1-fa)))
+                        loss += np.sum(np.log((1-target_word.code) * fa+target_word.code*(1-fa)))
                         ncountf += 1
         return loss/ncountf
 
@@ -259,7 +259,7 @@ class Word2Mat:
                     #logging.info("trainning finish")
                     break
                 countf += 1
-                if countf == 1000 and self.debug==True and self.workers ==1:
+                if countf == 100 and self.debug==True and self.workers ==1:
                     res = self.perplexity()
                     logging.info('Perplexity is %s' % (res))
                     countf = 0
