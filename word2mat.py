@@ -218,9 +218,9 @@ class Word2Mat:
                     end = pos + self.window
                     for pos2,word2 in enumerate(word_vocabs[start:end]):
                         if pos2 == pos: continue
-                        wordmat = self.syn0[pos].reshape(self.topic_size,self.vector_size)
+                        wordmat = self.syn0[word].reshape(self.topic_size,self.vector_size)
                         neu1 = wordmat.T.dot(context_vector)
-                        target_word = self.vocab.vocab[pos2]
+                        target_word = self.vocab.vocab[word2]
                         l2a = deepcopy(self.syn1[target_word.point])
                         fa = 1.0 / (1.0 + np.exp(-np.dot(neu1,l2a.T)))
                         loss += np.sum(np.log((1-target_word.code) * fa+target_word.code*(1-fa)))
