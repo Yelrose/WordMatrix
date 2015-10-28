@@ -83,6 +83,7 @@ cdef void fast_sentence0_sg_hs(
         f = <REAL_t>dsdot(&vector_size,neu1,&ONE,&syn1[row2],&ONE)
         if f <= -MAX_EXP or f >= MAX_EXP:
             continue
+        f = EXP_TABLE[<int>((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]
         g = (1 -  word_code[b] -f) * alpha
         saxpy(&vector_size,&g,&syn1[row2],&ONE,work,&ONE)
         saxpy(&vector_size,&g,neu1,&ONE,&syn1[row2],&ONE)
@@ -115,6 +116,7 @@ cdef unsigned long long fast_sentence0_sg_neg(
         f = <REAL_t> dsdot(&vector_size,neu1,&ONE,&syn1neg[row2],&ONE)
         if f <= - MAX_EXP or f >= MAX_EXP:
             continue
+        f = EXP_TABLE[<int>((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]
         g = (label - f) * alpha
         saxpy(&vector_size,&g,&syn1neg[row2],&ONE,work,&ONE)
         saxpy(&vector_size,&g,neu1,&ONE,&syn1neg[row2],&ONE)
