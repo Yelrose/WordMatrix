@@ -9,7 +9,6 @@ import threading
 import timeit
 import cPickle
 from word2mat_inner import train_sentence_sg as fast_train_sg
-
 def train_sg_sentence(model,sentence,alpha,context_vector,work=None):
     '''
     train a sentence get the window
@@ -22,6 +21,7 @@ def train_sg_sentence(model,sentence,alpha,context_vector,work=None):
         for pos2,word2 in enumerate(word_vocabs[start:end]):
             if pos2 == pos: continue
             train_sg_pair(model,word,word2,alpha,context_vector)
+
 
 
 
@@ -161,7 +161,7 @@ class Vocab:
 
 
 class Word2Mat:
-    def __init__(self,sentences,size=100,topic_num=10,alpha=0.025,negative=5,sg=1,iter=3,hs=1,min_count=5,sampling=1e-3,workers=1,window=5):
+    def __init__(self,sentences,size=100,topic_num=10,alpha=0.025,negative=5,sg=1,iter=3,hs=1,min_count=5,sampling=1e-3,workers=1,window=5,passes=20):
         self.alpha = alpha
         self.negative = negative
         self.sg = sg
@@ -178,6 +178,7 @@ class Word2Mat:
         logging.info('Total word %d'%(self.vocab.vocab_sz))
         self.topic_train()
         self.train()
+        self.passes=passes
 
 
     def build_vocab(self):
@@ -198,7 +199,7 @@ class Word2Mat:
 
     def topic_train(self):
         logging.info('Training Topic Model')
-        self.lda_model = ldamodel.LdaModel(corpus = BagOfWordSentences(self.sentences,self.vocab),num_topics=self.topic_size)
+        self.lda_model = ldamodel.LdaModel(corpus = BagOfWordSentences(self.sentences,self.vocab),num_topics=self.topic_size,passes=self.passes)
 
 
 
