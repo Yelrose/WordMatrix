@@ -223,8 +223,10 @@ class Word2Mat:
                         target_word = self.vocab.vocab[pos2]
                         l2a = deepcopy(self.syn1[target_word.point])
                         fa = 1.0 / (1.0 + np.exp(-np.dot(neu1,l2a.T)))
-                        ga = (1 - target_word.code - fa)
-                        loss += np.log(ga)
+                        if target_word.code == 0:
+                            loss +=np.log(fa)
+                        else :
+                            loss += np.log(1-fa)
                         ncountf += 1
         return loss/ncountf
 
