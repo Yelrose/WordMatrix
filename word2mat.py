@@ -161,7 +161,8 @@ class Vocab:
 
 
 class Word2Mat:
-    def __init__(self,sentences,size=100,topic_num=10,alpha=0.025,negative=5,sg=1,iter=3,hs=1,min_count=5,sampling=1e-3,workers=1,window=5,passes=20):
+    def __init__(self,sentences,size=100,topic_num=10,alpha=0.025,negative=5,sg=1,iter=3,hs=1,min_count=5,sampling=1e-3,workers=1,window=5,passes=20,debug=False):
+        self.debug=debug
         self.alpha = alpha
         self.negative = negative
         self.sg = sg
@@ -176,9 +177,9 @@ class Word2Mat:
         self.build_vocab()
         self.window = window
         logging.info('Total word %d'%(self.vocab.vocab_sz))
+        self.passes=passes
         self.topic_train()
         self.train()
-        self.passes=passes
 
 
     def build_vocab(self):
@@ -200,6 +201,34 @@ class Word2Mat:
     def topic_train(self):
         logging.info('Training Topic Model')
         self.lda_model = ldamodel.LdaModel(corpus = BagOfWordSentences(self.sentences,self.vocab),num_topics=self.topic_size,passes=self.passes)
+
+    def perplexity(self):
+        loss = 0.0
+        ncountf= 0
+        for sentence in RepeatSentences(self.sentences,self.iter):
+            word = len(sentence)
+            word_vocabs = [self.vocab.words[w] for w in sentence if w in self.vocab.words]
+            lda = self.lda_model[self.vocab.get_bag_of_word(sentence)]
+            context_vector = np.zeros(self.topic_size,dtype='float32')
+            for topic,pro in lda:
+                context_vector[topic] =  pro
+            if self.sg:
+                for pos,word in enumerate(word_vocabs):
+                    start = max(0,pos - model.window)
+                    end = pos + model.window
+                    for pos2,word2 in enumerate(word_vocabs[start:end]):
+                        if pos2 == pos: continue
+                        wordmat = self.syn0[pos].reshape(self.topic_size,self.vector_size)
+                        neu1 = wordmat.T.dot(context_vector)
+                        target_word = self.vocab.vocab[pos2]
+                        l2a = deepcopy(self.syn1[target_word.point])
+                        fa = 1.0 / (1.0 + np.exp(-np.dot(neu1,l2a.T)))
+                        ga = (1 - target_word.code - fa)
+                        loss += np.log(ga)
+                        ncountf += 1
+        return loss/ncountf
+
+
 
 
 
@@ -223,12 +252,19 @@ class Word2Mat:
             '''
             work = np.zeros(layer2sz,dtype='float32')
             neu1 = np.zeros(layer2sz,dtype='float32')
+            countf = 0
             while True:
                 job = job_queue.get()
                 item,alpha = job
                 if item is None:
                     #logging.info("trainning finish")
                     break
+                countf += 1
+                if countf == 1000 and self.debug==True and self.workers ==1:
+                    res = self.perplexity()
+                    logging.info('Perplexity is %s' % (res))
+                    countf = 0
+
                 word = len(item)
                 word_vocabs = [self.vocab.words[w] for w in item if w in self.vocab.words]
                 word_vocabs = [w for w in word_vocabs if np.random.uniform(0,1) < 1 - np.sqrt(self.sampling/self.vocab.vocab[w].freq) ]
@@ -357,7 +393,7 @@ class BagOfWordSentences:
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sentences = [[1,2,3,3,4,5,5,5,555,5],[2,3,4],[5,5,6,77,7,7,8,9]]
-    model = Word2Mat(sentences,iter=10,size=5,topic_num=2,min_count=0,workers=3)
+    model = Word2Mat(sentences,iter=10,size=5,topic_num=2,min_count=0,workers=1,debug=True)
     model.save()
     #lda_model = ldamodel.LdaModel(corpus = BagOfWordSentences(sentences,vocab),num_topics=3)
 
