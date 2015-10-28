@@ -214,8 +214,8 @@ class Word2Mat:
                 context_vector[topic] =  pro
             if self.sg:
                 for pos,word in enumerate(word_vocabs):
-                    start = max(0,pos - model.window)
-                    end = pos + model.window
+                    start = max(0,pos - self.window)
+                    end = pos + self.window
                     for pos2,word2 in enumerate(word_vocabs[start:end]):
                         if pos2 == pos: continue
                         wordmat = self.syn0[pos].reshape(self.topic_size,self.vector_size)
@@ -223,10 +223,7 @@ class Word2Mat:
                         target_word = self.vocab.vocab[pos2]
                         l2a = deepcopy(self.syn1[target_word.point])
                         fa = 1.0 / (1.0 + np.exp(-np.dot(neu1,l2a.T)))
-                        if target_word.code == 0:
-                            loss +=np.log(fa)
-                        else :
-                            loss += np.log(1-fa)
+                        loss += np.sum(np.log((1-target_word.code) * fa+target_word*(1-fa)))
                         ncountf += 1
         return loss/ncountf
 
