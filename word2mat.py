@@ -36,7 +36,7 @@ except ImportError:
     # failed... fall back to plain numpy (20-80x slower training than the above)
     FAST_VERSION = -1
 
-    def train_sentence_sg(model, sentence, alpha, work=None):
+    def train_sentence_sg(model, sentence, context_vector,alpha, work=None):
         """
         Update skip-gram model by training on a single sentence.
 
@@ -57,11 +57,11 @@ except ImportError:
             for pos2, word2 in enumerate(word_vocabs[start:(pos + model.window + 1 - reduced_window)], start):
                 # don't train on the `word` itself
                 if pos2 != pos:
-                    train_sg_pair(model, model.index2word[word.index], word2.index, alpha)
+                    train_sg_pair(model, model.index2word[word.index], word2.index,context_vector, alpha)
 
         return len(word_vocabs)
 
-    def train_sentence_cbow(model, sentence, alpha, work=None, neu1=None):
+    def train_sentence_cbow(model, sentence,context_vector, alpha, work=None, neu1=None):
         """
         Update CBOW model by training on a single sentence.
 
@@ -87,7 +87,7 @@ except ImportError:
         return len(word_vocabs)
 
 
-def train_sg_pair(model, word, context_index, alpha, learn_vectors=True, learn_hidden=True,
+def train_sg_pair(model, word, context_index,topic_vector, alpha, learn_vectors=True, learn_hidden=True,
                   context_vectors=None, context_locks=None):
     if context_vectors is None:
         context_vectors = model.syn0
@@ -98,7 +98,9 @@ def train_sg_pair(model, word, context_index, alpha, learn_vectors=True, learn_h
         return
     predict_word = model.vocab[word]  # target word (NN output)
 
-    l1 = context_vectors[context_index]  # input word (NN input/projection layer)
+    l1 = context_vectors[context_index].reshape(model.topic_size,model.vector_size)  # input word (NN input/projection layer)
+    l1 = l1.T.dot(topic_vector)
+
     lock_factor = context_locks[context_index]
 
     neu1e = zeros(l1.shape)
@@ -127,7 +129,7 @@ def train_sg_pair(model, word, context_index, alpha, learn_vectors=True, learn_h
         neu1e += dot(gb, l2b)  # save error
 
     if learn_vectors:
-        l1 += neu1e * lock_factor  # learn input -> hidden (mutates model.syn0[word2.index], if that is l1)
+        context_vectors[context_index] += lock_factor *outer(topic_vector,neu1e).reshape(model.vector_size*model.topic_size)
     return neu1e
 
 
@@ -457,8 +459,6 @@ class Word2Mat(utils.SaveLoad):
         report_values = {'drop_unique': drop_unique, 'retain_total': retain_total,
                          'downsample_unique': downsample_unique, 'downsample_total': int(downsample_total)}
 
-        # print extra memory estimates
-        report_values['memory'] = self.estimate_memory(vocab_size=len(retain_words))
 
         return report_values
 
@@ -494,14 +494,19 @@ class Word2Mat(utils.SaveLoad):
         self.reset_weights()
 
     def _do_train_job(self, job, alpha, inits):
+
         work, neu1 = inits
         tally = 0
         raw_tally = 0
         for sentence in job:
+            topic_dis = self.ldamodel[self.lda_dic.doc2bow(sentence)]
+            context_vector = zeros(self.topic_size,dtype=REAL)
+            for v,pro in topic_dis:
+                context_vector[v] =pro
             if self.sg:
-                tally += train_sentence_sg(self, sentence, alpha, work)
+                tally += train_sentence_sg(self, sentence,context_vector, alpha, work)
             else:
-                tally += train_sentence_cbow(self, sentence, alpha, work, neu1)
+                tally += train_sentence_cbow(self, sentence,context_vector, alpha, work, neu1)
             raw_tally += len(sentence)
         return (tally, raw_tally)
 
@@ -667,7 +672,7 @@ class Word2Mat(utils.SaveLoad):
     def reset_weights(self):
         """Reset all projection weights to an initial (untrained) state, but keep the existing vocabulary."""
         logger.info("resetting layer weights")
-        self.syn0 = empty((len(self.vocab), self.vector_size), dtype=REAL)
+        self.syn0 = empty((len(self.vocab), self.vector_size*self.topic_size), dtype=REAL)
         # randomize weights vector by vector, rather than materializing a huge random matrix in RAM at once
         for i in xrange(len(self.vocab)):
             # construct deterministic seed from word AND seed argument
@@ -684,22 +689,7 @@ class Word2Mat(utils.SaveLoad):
         """Create one 'random' vector (but deterministic by seed_string)"""
         # Note: built-in hash() may vary by Python version or even (in Py3.x) per launch
         once = random.RandomState(uint32(self.hashfxn(seed_string)))
-        return (once.rand(self.vector_size) - 0.5) / self.vector_size
-
-    def estimate_memory(self, vocab_size=None, report=None):
-        """Estimate required memory for a model using current settings and provided vocabulary size."""
-        vocab_size = vocab_size or len(self.vocab)
-        report = report or {}
-        report['vocab'] = vocab_size * (700 if self.hs else 500)
-        report['syn0'] = vocab_size * self.vector_size * dtype(REAL).itemsize
-        if self.hs:
-            report['syn1'] = vocab_size * self.layer1_size * dtype(REAL).itemsize
-        if self.negative:
-            report['syn1neg'] = vocab_size * self.layer1_size * dtype(REAL).itemsize
-        report['total'] = sum(report.values())
-        logger.info("estimated required memory for %i words and %i dimensions: %i bytes",
-                    vocab_size, self.vector_size, report['total'])
-        return report
+        return (once.rand(self.vector_size*self.topic_size) - 0.5) / self.vector_size/ self.topic_size
 
 class FakeJobQueue(object):
     """Pretends to be a Queue; does equivalent of work_loop in calling thread."""
