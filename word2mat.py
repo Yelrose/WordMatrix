@@ -690,7 +690,7 @@ class Word2Mat(utils.SaveLoad):
         """Create one 'random' vector (but deterministic by seed_string)"""
         # Note: built-in hash() may vary by Python version or even (in Py3.x) per launch
         once = random.RandomState(uint32(self.hashfxn(seed_string)))
-        return (once.rand(self.vector_size*self.topic_size) - 0.5) / self.vector_size/ self.topic_size
+        return (once.rand(self.vector_size*self.topic_size) - 0.5) / self.vector_size
 
 class FakeJobQueue(object):
     """Pretends to be a Queue; does equivalent of work_loop in calling thread."""
