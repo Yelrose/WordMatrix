@@ -80,9 +80,11 @@ except ImportError:
             window_pos = enumerate(word_vocabs[start:(pos + model.window + 1 - reduced_window)], start)
             word2_indices = [word2.index for pos2, word2 in window_pos if (word2 is not None and pos2 != pos)]
             l1 = np_sum(model.syn0[word2_indices], axis=0)  # 1 x vector_size
+            l1 = l1.reshape(model.topic_size,model.vector_size)
+            l1 = l1.T.dot(context_vector)
             if word2_indices and model.cbow_mean:
                 l1 /= len(word2_indices)
-            train_cbow_pair(model, word, word2_indices, l1, alpha)
+            train_cbow_pair(model, word, word2_indices,context_vector, l1, alpha)
 
         return len(word_vocabs)
 
@@ -133,7 +135,7 @@ def train_sg_pair(model, word, context_index,topic_vector, alpha, learn_vectors=
     return neu1e
 
 
-def train_cbow_pair(model, word, input_word_indices, l1, alpha, learn_vectors=True, learn_hidden=True):
+def train_cbow_pair(model, word, input_word_indices, topic_vector,l1, alpha, learn_vectors=True, learn_hidden=True):
     neu1e = zeros(l1.shape)
 
     if model.hs:
@@ -163,8 +165,7 @@ def train_cbow_pair(model, word, input_word_indices, l1, alpha, learn_vectors=Tr
         if not model.cbow_mean and input_word_indices:
             neu1e /= len(input_word_indices)
         for i in input_word_indices:
-            model.syn0[i] += neu1e * model.syn0_lockf[i]
-
+            model.syn0[i] += outer(topic_vector,neu1e).reshape(model.vector_size*model.topic_size) * model.syn0_lockf[i]
     return neu1e
 
 class Vocab(object):
