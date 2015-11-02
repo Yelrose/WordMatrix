@@ -31,12 +31,12 @@ from types import GeneratorType
 logger = logging.getLogger("word2mat")
 
 try:
-    from gensim.models.word2mat_inner import train_sentence_sg, train_sentence_cbow, FAST_VERSION
+    from word2mat_inner import train_sentence_sg, train_sentence_cbow, FAST_VERSION
 except ImportError:
     # failed... fall back to plain numpy (20-80x slower training than the above)
     FAST_VERSION = -1
 
-    def train_sentence_sg(model, sentence, context_vector,alpha, work=None):
+    def train_sentence_sg(model, sentence, context_vector,alpha, work=None,neu1=None):
         """
         Update skip-gram model by training on a single sentence.
 
@@ -505,7 +505,7 @@ class Word2Mat(utils.SaveLoad):
             for v,pro in topic_dis:
                 context_vector[v] =pro
             if self.sg:
-                tally += train_sentence_sg(self, sentence,context_vector, alpha, work)
+                tally += train_sentence_sg(self, sentence,context_vector, alpha, work,neu1)
             else:
                 tally += train_sentence_cbow(self, sentence,context_vector, alpha, work, neu1)
             raw_tally += len(sentence)

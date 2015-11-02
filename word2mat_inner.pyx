@@ -15,11 +15,40 @@ from libc.math cimport exp
 from libc.math cimport log
 from libc.string cimport memset
 
-from scipy.linalg.blas import fblas
+cdef extern from "voidptr.h":
+    void* PyCObject_AsVoidPtr(object obj)
+
+
+try:
+    from scipy.linalg.blas import fblas
+except:
+    import scipy.linalg.blas as fblas
+
 
 REAL = np.float32
+ctypedef np.float32_t REAL_t
 
 DEF MAX_SENTENCE_LEN = 10000
+
+
+
+ctypedef void (*scopy_ptr) (const int *N, const float *X, const int *incX, float *Y, const int *incY) nogil
+ctypedef void (*saxpy_ptr) (const int *N, const float *alpha, const float *X, const int *incX, float *Y, const int *incY) nogil
+ctypedef float (*sdot_ptr) (const int *N, const float *X, const int *incX, const float *Y, const int *incY) nogil
+ctypedef double (*dsdot_ptr) (const int *N, const float *X, const int *incX, const float *Y, const int *incY) nogil
+ctypedef double (*snrm2_ptr) (const int *N, const float *X, const int *incX) nogil
+ctypedef void (*sscal_ptr) (const int *N, const float *alpha, const float *X, const int *incX) nogil
+ctypedef void (*sgemv_ptr) (const char* TRANS,const int *M,const int *N,const float*  alpha,const float *A,const int *LDA,const float * X,const int *incX,const float *beta,float * Y,const int * incY) nogil
+ctypedef void (*sger_ptr) (const int * M,const int * N,const float * alpha,const float *X,const int *incX,float * Y,const int* incY,const float * A,const int* LDA) nogil
+ctypedef REAL_t (*our_dot_ptr) (const int *N, const float *X, const int *incX, const float *Y, const int *incY) nogil
+ctypedef void (*our_saxpy_ptr) (const int *N, const float *alpha, const float *X, const int *incX, float *Y, const int *incY) nogil
+
+cdef our_dot_ptr our_dot
+cdef our_saxpy_ptr our_saxpy
+
+
+
+
 
 cdef scopy_ptr scopy=<scopy_ptr>PyCObject_AsVoidPtr(fblas.scopy._cpointer)  # y = x
 cdef saxpy_ptr saxpy=<saxpy_ptr>PyCObject_AsVoidPtr(fblas.saxpy._cpointer)  # y += alpha * x
@@ -27,6 +56,8 @@ cdef sdot_ptr sdot=<sdot_ptr>PyCObject_AsVoidPtr(fblas.sdot._cpointer)  # float 
 cdef dsdot_ptr dsdot=<dsdot_ptr>PyCObject_AsVoidPtr(fblas.sdot._cpointer)  # double = dot(x, y)
 cdef snrm2_ptr snrm2=<snrm2_ptr>PyCObject_AsVoidPtr(fblas.snrm2._cpointer)  # sqrt(x^2)
 cdef sscal_ptr sscal=<sscal_ptr>PyCObject_AsVoidPtr(fblas.sscal._cpointer) # x = alpha * x
+cdef sgemv_ptr sgemv=<sgemv_ptr>PyCObject_AsVoidPtr(fblas.sgemv._cpointer)
+cdef sger_ptr sger = <sger_ptr>PyCObject_AsVoidPtr(fblas.sger._cpointer)
 
 DEF EXP_TABLE_SIZE = 1000
 DEF MAX_EXP = 6
@@ -64,24 +95,27 @@ cdef void our_saxpy_noblas(const int *N, const float *alpha, const float *X, con
 
 cdef void fast_sentence_sg_hs(
     const np.uint32_t *word_point, const np.uint8_t *word_code, const int codelen,
-    REAL_t *syn0, REAL_t *syn1, const int size,
-    const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work, REAL_t *word_locks) nogil:
+    REAL_t *syn0, REAL_t *syn1, const int vector_size,const int topic_size,
+    const REAL_t * context_vector,
+    const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work,REAL_t * neu1, REAL_t *word_locks) nogil:
 
     cdef long long a, b
-    cdef long long row1 = word2_index * size, row2
+    cdef long long row1 = word2_index * vector_size * topic_size, row2
     cdef REAL_t f, g
-
-    memset(work, 0, size * cython.sizeof(REAL_t))
+    cdef char trans = <char >'c'
+    memset(neu1,0,vector_size*cython.sizeof(REAL_t))
+    memset(work, 0, vector_size * cython.sizeof(REAL_t))
+    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
     for b in range(codelen):
-        row2 = word_point[b] * size
-        f = our_dot(&size, &syn0[row1], &ONE, &syn1[row2], &ONE)
+        row2 = word_point[b] *vector_size
+        f = our_dot(&vector_size, neu1, &ONE, &syn1[row2], &ONE)
         if f <= -MAX_EXP or f >= MAX_EXP:
             continue
         f = EXP_TABLE[<int>((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]
         g = (1 - word_code[b] - f) * alpha
-        our_saxpy(&size, &g, &syn1[row2], &ONE, work, &ONE)
-        our_saxpy(&size, &g, &syn0[row1], &ONE, &syn1[row2], &ONE)
-    our_saxpy(&size, &word_locks[word2_index], work, &ONE, &syn0[row1], &ONE)
+        our_saxpy(&vector_size, &g, &syn1[row2], &ONE, work, &ONE)
+        our_saxpy(&vector_size, &g, neu1, &ONE, &syn1[row2], &ONE)
+    sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
 
 
 # to support random draws from negative-sampling cum_table
@@ -104,19 +138,21 @@ cdef inline unsigned long long random_int32(unsigned long long *next_random) nog
 
 cdef unsigned long long fast_sentence_sg_neg(
     const int negative, np.uint32_t *cum_table, unsigned long long cum_table_len,
-    REAL_t *syn0, REAL_t *syn1neg, const int size, const np.uint32_t word_index,
-    const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work,
+    REAL_t *syn0, REAL_t *syn1neg, const int vector_size,const int topic_size,REAL_t* context_vector, const np.uint32_t word_index,
+    const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work,REAL_t *neu1,
     unsigned long long next_random, REAL_t *word_locks) nogil:
 
     cdef long long a
-    cdef long long row1 = word2_index * size, row2
+    cdef long long row1 = word2_index * vector_size*topic_size, row2
     cdef unsigned long long modulo = 281474976710655ULL
     cdef REAL_t f, g, label
     cdef np.uint32_t target_index
     cdef int d
 
-    memset(work, 0, size * cython.sizeof(REAL_t))
-
+    memset(work, 0, vector_size * cython.sizeof(REAL_t))
+    memset(neu1, 0,  vector_size * cython.sizeof(REAL_t))
+    cdef char trans = <char> 'c'
+    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
     for d in range(negative+1):
         if d == 0:
             target_index = word_index
@@ -128,16 +164,16 @@ cdef unsigned long long fast_sentence_sg_neg(
                 continue
             label = <REAL_t>0.0
 
-        row2 = target_index * size
-        f = our_dot(&size, &syn0[row1], &ONE, &syn1neg[row2], &ONE)
+        row2 = target_index * vector_size
+
+        f = our_dot(&vector_size, neu1, &ONE, &syn1neg[row2], &ONE)
         if f <= -MAX_EXP or f >= MAX_EXP:
             continue
         f = EXP_TABLE[<int>((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]
         g = (label - f) * alpha
-        our_saxpy(&size, &g, &syn1neg[row2], &ONE, work, &ONE)
-        our_saxpy(&size, &g, &syn0[row1], &ONE, &syn1neg[row2], &ONE)
-
-    our_saxpy(&size, &word_locks[word2_index], work, &ONE, &syn0[row1], &ONE)
+        our_saxpy(&vector_size, &g, &syn1neg[row2], &ONE, work, &ONE)
+        our_saxpy(&vector_size, &g, neu1, &ONE, &syn1neg[row2], &ONE)
+    sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
 
     return next_random
 
@@ -250,16 +286,19 @@ cdef unsigned long long fast_sentence_cbow_neg(
 
 
 
-def train_sentence_sg(model, sentence, alpha, _work):
+def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
     cdef int hs = model.hs
     cdef int negative = model.negative
     cdef int sample = (model.sample != 0)
 
     cdef REAL_t *syn0 = <REAL_t *>(np.PyArray_DATA(model.syn0))
+    cdef REAL_t *context_vector= <REAL_t *>(np.PyArray_DATA(topic_vector))
     cdef REAL_t *word_locks = <REAL_t *>(np.PyArray_DATA(model.syn0_lockf))
-    cdef REAL_t *work
+    cdef REAL_t *work= <REAL_t *>(np.PyArray_DATA(_work))
+    cdef REAL_t *neu1= <REAL_t *>(np.PyArray_DATA(_neu1))
     cdef REAL_t _alpha = alpha
-    cdef int size = model.layer1_size
+    cdef int vector_size = model.vector_size
+    cdef int topic_size = model.topic_size
 
     cdef int codelens[MAX_SENTENCE_LEN]
     cdef np.uint32_t indexes[MAX_SENTENCE_LEN]
@@ -292,8 +331,6 @@ def train_sentence_sg(model, sentence, alpha, _work):
     if negative or sample:
         next_random = (2**24) * model.random.randint(0, 2**24) + model.random.randint(0, 2**24)
 
-    # convert Python structures to primitive types, so we can release the GIL
-    work = <REAL_t *>np.PyArray_DATA(_work)
 
     vlookup = model.vocab
     i = 0
@@ -331,9 +368,9 @@ def train_sentence_sg(model, sentence, alpha, _work):
                 if j == i:
                     continue
                 if hs:
-                    fast_sentence_sg_hs(points[i], codes[i], codelens[i], syn0, syn1, size, indexes[j], _alpha, work, word_locks)
+                    fast_sentence_sg_hs(points[i], codes[i], codelens[i], syn0, syn1, vector_size,topic_size,context_vector, indexes[j], _alpha, work,neu1, word_locks)
                 if negative:
-                    next_random = fast_sentence_sg_neg(negative, cum_table, cum_table_len, syn0, syn1neg, size, indexes[i], indexes[j], _alpha, work, next_random, word_locks)
+                    next_random = fast_sentence_sg_neg(negative, cum_table, cum_table_len, syn0, syn1neg, vector_size,topic_size,context_vector, indexes[i], indexes[j], _alpha, work,neu1, next_random, word_locks)
 
     return result
 
