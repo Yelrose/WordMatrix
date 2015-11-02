@@ -14,8 +14,10 @@ cimport numpy as np
 from libc.math cimport exp
 from libc.math cimport log
 from libc.string cimport memset
-
-from scipy.linalg.blas import fblas
+try:
+    from scipy.linalg.blas import fblas
+except:
+    import scipy.linalg.blas as fblas
 
 REAL = np.float32
 
