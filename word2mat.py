@@ -195,9 +195,9 @@ class Word2Mat(utils.SaveLoad):
 
     """
     def __init__(
-            self, sentences=None, size=100,topic=50, alpha=0.025, window=5, min_count=5,
+            self, sentences=None,sentences_vector=None, size=100,topic=50, alpha=0.025, window=5, min_count=5,
             max_vocab_size=None, sample=0, seed=1, workers=1, min_alpha=0.0001,
-            sg=1, hs=1, negative=0, cbow_mean=0, hashfxn=hash, iter=1, null_word=0,lda_iter=20):
+            sg=1, hs=1, negative=0, cbow_mean=0, hashfxn=hash, iter=1, null_word=0):
         """
         Initialize the model from an iterable of `sentences`. Each sentence is a
         list of words (unicode strings) that will be used for training.
@@ -247,13 +247,14 @@ class Word2Mat(utils.SaveLoad):
         `iter` = number of iterations (epochs) over the corpus.
 
         """
+        self.sentences_vector = sentences_vector
         self.vocab = {}  # mapping from a word (string) to a Vocab object
         self.index2word = []  # map from a word's matrix index (int) to word (string)
         self.sg = int(sg)
         self.cum_table = None  # for negative sampling
         self.vector_size = int(size)
         self.topic_size =int(topic)
-        self.lda_iter= int(lda_iter)
+        #self.lda_iter= int(lda_iter)
         self.layer1_size = int(size)
         if size % 4 != 0:
             logger.warning("consider setting layer size to a multiple of 4 for greater performance")
@@ -279,7 +280,7 @@ class Word2Mat(utils.SaveLoad):
                 raise TypeError("You can't pass a generator as the sentences argument. Try an iterator.")
 
             self.build_vocab(sentences)
-            self.train_lda(sentences)
+            #self.train_lda(sentences)
             self.train(sentences)
 
     def train_lda(self,sentences):
@@ -499,11 +500,9 @@ class Word2Mat(utils.SaveLoad):
         work, neu1 = inits
         tally = 0
         raw_tally = 0
-        for sentence in job:
-            topic_dis = self.ldamodel[self.lda_dic.doc2bow(sentence)]
-            context_vector = zeros(self.topic_size,dtype=REAL)
-            for v,pro in topic_dis:
-                context_vector[v] =pro
+        for sentence_id,sentence in job:
+            context_vector = self.sentences_vector[sentence_id]
+            #print sentence_id,sentence,context_vector
             if self.sg:
                 tally += train_sentence_sg(self, sentence,context_vector, alpha, work,neu1)
             else:
@@ -551,7 +550,7 @@ class Word2Mat(utils.SaveLoad):
                 logger.info("expecting %i examples, matching count from corpus used for vocabulary survey", total_examples)
             else:
                 raise ValueError("you must provide either total_words or total_examples, to enable alpha and progress calculations")
-
+        sentences = enumerate(sentences)
         if self.iter > 1:
             sentences = utils.RepeatCorpusNTimes(sentences, self.iter)
             total_words = total_words and total_words * self.iter
@@ -616,7 +615,8 @@ class Word2Mat(utils.SaveLoad):
                         next_alpha = self.alpha - (self.alpha - self.min_alpha) * (pushed_examples / total_examples)
                     else:
                         # words-based decay
-                        pushed_words += self._raw_word_count(items)
+                        #pushed_words += self._raw_word_count(items)
+                        pushed_words += self._raw_word_count([item[1] for item in items])
                         next_alpha = self.alpha - (self.alpha - self.min_alpha) * (pushed_words / total_words)
                     next_alpha = max(next_alpha, self.min_alpha)
             except StopIteration:
@@ -804,4 +804,5 @@ class LineSentence(object):
 if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sen = [['1','2','43','4','5','6',],['2','3','4','6','7','88','8',],['324','34','5','6','6','3']]
-    model = Word2Mat(sen,min_count=1)
+    sen_vector = [array([1,2,3,4]),array([2,2,3,4]),array([3,2,3,4])]
+    model = Word2Mat(sen,sen_vector,topic=4,min_count=0)
