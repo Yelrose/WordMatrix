@@ -549,7 +549,9 @@ class Word2Mat(utils.SaveLoad):
                 logger.info("expecting %i examples, matching count from corpus used for vocabulary survey", total_examples)
             else:
                 raise ValueError("you must provide either total_words or total_examples, to enable alpha and progress calculations")
-        sentences = list(enumerate(sentences))
+        logging.info("initiallize sentence")
+        sentences = EnumerateSentence(sentences)
+        logging.info("initiallize sentence finish")
         if self.iter > 1:
             sentences = utils.RepeatCorpusNTimes(sentences, self.iter)
             total_words = total_words and total_words * self.iter
@@ -799,6 +801,15 @@ class LineSentence(object):
                     while i < len(line):
                         yield line[i:(i + self.max_sentence_length)]
                         i += self.max_sentence_length
+
+
+class EnumerateSentence(object):
+    def __init__(self,source):
+        self.source =source
+
+    def __iter__(self):
+        for id,sentence in enumerate(self.source):
+            yield (id,sentence)
 
 if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
