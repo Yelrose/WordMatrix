@@ -100,8 +100,8 @@ def train_sg_pair(model, word, context_index,topic_vector, alpha, learn_vectors=
         return
     predict_word = model.vocab[word]  # target word (NN output)
 
-    l1 = context_vectors[context_index].reshape(model.topic_size,model.vector_size)  # input word (NN input/projection layer)
-    l1 = l1.T.dot(topic_vector)
+    l1 = context_vectors[context_index].reshape(model.vector_size,model.topic_size)  # input word (NN input/projection layer)
+    l1 = l1.dot(topic_vector)
 
     lock_factor = context_locks[context_index]
 
@@ -131,7 +131,7 @@ def train_sg_pair(model, word, context_index,topic_vector, alpha, learn_vectors=
         neu1e += dot(gb, l2b)  # save error
 
     if learn_vectors:
-        context_vectors[context_index] += lock_factor *outer(topic_vector,neu1e).reshape(model.vector_size*model.topic_size)
+        context_vectors[context_index] += lock_factor *outer(neu1e,topic_vector).reshape(model.vector_size*model.topic_size)
     return neu1e
 
 
@@ -502,7 +502,6 @@ class Word2Mat(utils.SaveLoad):
         raw_tally = 0
         for sentence_id,sentence in job:
             context_vector = self.sentences_vector[sentence_id]
-            #print sentence_id,sentence,context_vector
             if self.sg:
                 tally += train_sentence_sg(self, sentence,context_vector, alpha, work,neu1)
             else:
@@ -550,7 +549,7 @@ class Word2Mat(utils.SaveLoad):
                 logger.info("expecting %i examples, matching count from corpus used for vocabulary survey", total_examples)
             else:
                 raise ValueError("you must provide either total_words or total_examples, to enable alpha and progress calculations")
-        sentences = enumerate(sentences)
+        sentences = list(enumerate(sentences))
         if self.iter > 1:
             sentences = utils.RepeatCorpusNTimes(sentences, self.iter)
             total_words = total_words and total_words * self.iter
@@ -805,4 +804,4 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sen = [['1','2','43','4','5','6',],['2','3','4','6','7','88','8',],['324','34','5','6','6','3']]
     sen_vector = [array([1,2,3,4]),array([2,2,3,4]),array([3,2,3,4])]
-    model = Word2Mat(sen,sen_vector,topic=4,min_count=0)
+    model = Word2Mat(sen,sen_vector,topic=4,min_count=0,iter=5)
