@@ -197,7 +197,7 @@ class Word2Mat(utils.SaveLoad):
     def __init__(
             self, sentences=None,sentences_vector=None, size=100,topic=50, alpha=0.025, window=5, min_count=5,
             max_vocab_size=None, sample=0, seed=1, workers=1, min_alpha=0.0001,
-            sg=1, hs=1, negative=0, cbow_mean=0, hashfxn=hash, iter=1, null_word=0):
+            sg=1, hs=1, negative=0, cbow_mean=0, hashfxn=hash, iter=1, null_word=0,other_model=None):
         """
         Initialize the model from an iterable of `sentences`. Each sentence is a
         list of words (unicode strings) that will be used for training.
@@ -254,6 +254,7 @@ class Word2Mat(utils.SaveLoad):
         self.cum_table = None  # for negative sampling
         self.vector_size = int(size)
         self.topic_size =int(topic)
+        self.other_model = other_model
         #self.lda_iter= int(lda_iter)
         self.layer1_size = int(size)
         if size % 4 != 0:
@@ -484,16 +485,28 @@ class Word2Mat(utils.SaveLoad):
         # set initial input/projection and hidden weights
         self.reset_weights()
 
-    def reset_from(self, other_model):
-        """
-        Borrow shareable pre-built structures (like vocab) from the other_model. Useful
-        if testing multiple models in parallel on the same corpus.
-        """
-        self.vocab = other_model.vocab
-        self.index2word = other_model.index2word
-        self.cum_table = other_model.cum_table
-        self.corpus_count = other_model.corpus_count
-        self.reset_weights()
+
+    def reset_weights_from_model(self):
+        other_model = self.other_model
+        logger.info("resetting layer weights from other")
+        for key,word in self.vocab.items():
+            idx = word.index
+            if key in other_model:
+                vec0 = other_model[key]
+                vec = zeros((self.topic_size,self.vector_size),dtype=REAL)
+                for i in xrange(self.topic_size):
+                    vec[i] = vec0
+                self.syn0[idx] = vec.T.reshape(self.topic_size * self.vector_size)
+            else : self.syn0[idx] = self.seeded_vector(self.index2word[i] + str(self.seed))
+
+
+
+
+
+
+
+
+
 
     def _do_train_job(self, job, alpha, inits):
 
@@ -675,10 +688,15 @@ class Word2Mat(utils.SaveLoad):
         """Reset all projection weights to an initial (untrained) state, but keep the existing vocabulary."""
         logger.info("resetting layer weights")
         self.syn0 = empty((len(self.vocab), self.vector_size*self.topic_size), dtype=REAL)
-        # randomize weights vector by vector, rather than materializing a huge random matrix in RAM at once
-        for i in xrange(len(self.vocab)):
-            # construct deterministic seed from word AND seed argument
-            self.syn0[i] = self.seeded_vector(self.index2word[i] + str(self.seed))
+        if self.other_model ==  None:
+            # randomize weights vector by vector, rather than materializing a huge random matrix in RAM at once
+            for i in xrange(len(self.vocab)):
+                # construct deterministic seed from word AND seed argument
+                self.syn0[i] = self.seeded_vector(self.index2word[i] + str(self.seed))
+        else :
+            self.reset_weights_from_model()
+
+
         if self.hs:
             self.syn1 = zeros((len(self.vocab), self.layer1_size), dtype=REAL)
         if self.negative:
