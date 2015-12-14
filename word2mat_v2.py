@@ -499,7 +499,7 @@ class Word2Mat(utils.SaveLoad):
                 for i in xrange(self.topic_size):
                     vec[i] = vec0
                 self.syn0[idx] = vec.T.reshape(self.topic_size * self.vector_size)
-            else : self.syn0[idx] = self.seeded_vector(self.index2word[i] + str(self.seed))
+            else : self.syn0[idx] = self.seeded_vector(self.index2word[idx] + str(self.seed))
 
 
 
