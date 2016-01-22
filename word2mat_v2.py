@@ -501,15 +501,6 @@ class Word2Mat(utils.SaveLoad):
                 self.syn0[idx] = vec.T.reshape(self.topic_size * self.vector_size)
             else : self.syn0[idx] = self.seeded_vector(self.index2word[idx] + str(self.seed))
 
-
-
-
-
-
-
-
-
-
     def _do_train_job(self, job, alpha, inits):
 
         work, neu1,context_vector = inits
@@ -683,6 +674,15 @@ class Word2Mat(utils.SaveLoad):
         self.clear_sims()
         return trained_word_count
 
+    def __getitem__(self,word_context):
+        """
+         Accept a single (word,context) or a list of (word,context)s as input
+        """
+        word,context_vector =  word_context
+        return self.syn0[self.vocab[word].index].reshape(self.vector_size,self.topic_size).dot(context_vector)
+
+
+
     def clear_sims(self):
         self.syn0norm = None
 
@@ -834,4 +834,5 @@ class EnumerateSentence(object):
 if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sen = [[('1',0),('2',1),('43',2),('4',3),('5',2),('6',1)],[('2',0),('3',2),('4',1),('6',2),('7',1),('88',2),('8',1)],[('324',1),('34',2),('5',1),('6',3),('6',3),('3',2)]]
-    model = Word2Mat(sen,topic=4,min_count=0,iter=5)
+    model = Word2Mat(sen,topic=4,size=5,min_count=0,iter=5)
+    print model[('1',array([0.1,0.2,0.4,0.3]))]
