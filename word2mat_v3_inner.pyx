@@ -109,9 +109,7 @@ cdef void fast_sentence_sg_hs(
     memset(neu1,0,vector_size*cython.sizeof(REAL_t))
     memset(work, 0, vector_size * cython.sizeof(REAL_t))
     #sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
-    printf("------\n")
     for tp in range(topic_size):
-        printf("%.2lf ",context_vector)
         if context_vector[tp] > 0:
             our_saxpy(&vector_size,&context_vector[tp],&syn0[row1+tp*topic_size],&ONE,neu1,&ONE)
 
@@ -379,9 +377,9 @@ def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
             if j < 0:
                 j = 0
             k = i + topic_window + 1
-            tot_topic =  k - j
             if k > sentence_len:
                 k =  sentence_len
+            tot_topic =  k - j
             for j in range(j,k):
                 context_vector[topic[j]] += 1.0 / tot_topic
 
