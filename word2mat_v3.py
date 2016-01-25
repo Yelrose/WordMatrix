@@ -31,8 +31,7 @@ from types import GeneratorType
 logger = logging.getLogger("word2mat")
 
 try:
-    from word2mat_v2_inner import train_sentence_sg, train_sentence_cbow, FAST_VERSION
-    raise ImportError
+    from word2mat_v3_inner import train_sentence_sg, train_sentence_cbow, FAST_VERSION
 except ImportError:
     # failed... fall back to plain numpy (20-80x slower training than the above)
     FAST_VERSION = -1
@@ -101,18 +100,19 @@ except ImportError:
 
 def train_sg_pair(model, word, context_index,topic_vector, alpha, learn_vectors=True, learn_hidden=True,
                   context_vectors=None, context_locks=None):
+    if context_vectors is None:
+        context_vectors = model.syn0
+    if context_locks is None:
+        context_locks = model.syn0_lockf
 
     if word not in model.vocab:
         return
     predict_word = model.vocab[word]  # target word (NN output)
-    if model.hidden != None:
-        P = model.syn0P[context_index].reshape(model.vector_size,model.hidden)
-        Q = model.syn0Q[context_index].reshape(model.topic_size,model.hidden)
-        l1 =  P.dot(Q.T)
-    else :
-        l1 = model.syn0[context_index].reshape(model.vector_size,model.topic_size)  # input word (NN input/projection layer)
+
+    l1 = context_vectors[context_index].reshape(model.topic_size,model.vector_size)  # input word (NN input/projection layer)
     l1 = l1.dot(topic_vector)
 
+    lock_factor = context_locks[context_index]
 
     neu1e = zeros(l1.shape)
 
@@ -140,12 +140,7 @@ def train_sg_pair(model, word, context_index,topic_vector, alpha, learn_vectors=
         neu1e += dot(gb, l2b)  # save error
 
     if learn_vectors:
-        if model.hidden !=  None:
-            model.syn0P[context_index] += outer(neu1e,topic_vector).dot(Q).reshape(model.vector_size * model.hidden)
-            model.syn0Q[context_index] += outer(neu1e,topic_vector).T.dot(P).reshape(model.topic_size * model.hidden)
-
-        else :
-            model.syn0[context_index] += outer(neu1e,topic_vector).reshape(model.vector_size*model.topic_size)
+        context_vectors[context_index] += lock_factor *outer(topic_vector,neu1e).reshape(model.vector_size*model.topic_size)
     return neu1e
 
 
@@ -211,7 +206,7 @@ class Word2Mat(utils.SaveLoad):
     def __init__(
             self, sentences=None,topic_window=5, size=100,topic=50, alpha=0.025, window=5, min_count=5,
             max_vocab_size=None, sample=0, seed=1, workers=1, min_alpha=0.0001,
-            sg=1, hs=1, negative=0, cbow_mean=0, hashfxn=hash, iter=1, null_word=0,other_model=None,hidden=None):
+            sg=1, hs=1, negative=0, cbow_mean=0, hashfxn=hash, iter=1, null_word=0,other_model=None):
         """
         Initialize the model from an iterable of `sentences`. Each sentence is a
         list of words (unicode strings) that will be used for training.
@@ -261,7 +256,6 @@ class Word2Mat(utils.SaveLoad):
         `iter` = number of iterations (epochs) over the corpus.
 
         """
-        self.hidden =  hidden
         self.topic_window =  topic_window
         self.vocab = {}  # mapping from a word (string) to a Vocab object
         self.index2word = []  # map from a word's matrix index (int) to word (string)
@@ -504,18 +498,8 @@ class Word2Mat(utils.SaveLoad):
                 vec = zeros((self.topic_size,self.vector_size),dtype=REAL)
                 for i in xrange(self.topic_size):
                     vec[i] = vec0
-                # There is a transfrom of vec
-                self.syn0[idx] = vec.T.reshape(self.topic_size * self.vector_size)
+                self.syn0[idx] = vec.reshape(self.topic_size * self.vector_size)
             else : self.syn0[idx] = self.seeded_vector(self.index2word[idx] + str(self.seed))
-
-
-
-
-
-
-
-
-
 
     def _do_train_job(self, job, alpha, inits):
 
@@ -690,32 +674,22 @@ class Word2Mat(utils.SaveLoad):
         self.clear_sims()
         return trained_word_count
 
+    def __getitem__(self,word_context):
+        """
+         Accept a single (word,context) or a list of (word,context)s as input
+        """
+        word,context_vector =  word_context
+        return self.syn0[self.vocab[word].index].reshape(self.vector_size,self.topic_size).dot(context_vector)
+
+
+
     def clear_sims(self):
         self.syn0norm = None
-
-
-    def matrix_factorization(self,R,hidden,steps=500,alpha=0.002,threshold=1e-5):
-        vector_size,topic_size=  R.shape
-        P = (random.rand(vector_size,hidden) -0.5)
-        Q = (random.rand(topic_size,hidden) - 0.5)
-        for step in xrange(steps):
-            loss =  (R - P.dot(Q.T))
-            real_loss = np_sum(loss * loss) / topic_size / vector_size
-            if real_loss < threshold: break
-            P = P + alpha * loss.dot(Q)
-            Q = Q + alpha * loss.T.dot(P)
-        return P.reshape(vector_size*hidden),Q.reshape(topic_size*hidden)
-
-
-
 
     def reset_weights(self):
         """Reset all projection weights to an initial (untrained) state, but keep the existing vocabulary."""
         logger.info("resetting layer weights")
         self.syn0 = empty((len(self.vocab), self.vector_size*self.topic_size), dtype=REAL)
-        if self.hidden != None:
-            self.syn0P = empty((len(self.vocab),self.vector_size*self.hidden),dtype=REAL)
-            self.syn0Q = empty((len(self.vocab),self.topic_size*self.hidden),dtype=REAL)
         if self.other_model ==  None:
             # randomize weights vector by vector, rather than materializing a huge random matrix in RAM at once
             for i in xrange(len(self.vocab)):
@@ -723,11 +697,6 @@ class Word2Mat(utils.SaveLoad):
                 self.syn0[i] = self.seeded_vector(self.index2word[i] + str(self.seed))
         else :
             self.reset_weights_from_model()
-        if self.hidden != None:
-            logging.info("Factorize the syn0 matrix into two small matrix")
-            for i in xrange(len(self.vocab)):
-                self.syn0P[i],self.syn0Q[i] = self.matrix_factorization(self.syn0[i].reshape(self.vector_size,self.topic_size),self.hidden)
-
 
 
         if self.hs:
@@ -865,4 +834,5 @@ class EnumerateSentence(object):
 if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     sen = [[('1',0),('2',1),('43',2),('4',3),('5',2),('6',1)],[('2',0),('3',2),('4',1),('6',2),('7',1),('88',2),('8',1)],[('324',1),('34',2),('5',1),('6',3),('6',3),('3',2)]]
-    model = Word2Mat(sen,size=400,topic=80,min_count=0,iter=5,hidden=50)
+    model = Word2Mat(sen,topic=4,size=5,min_count=0,iter=5)
+    print model[('1',array([0.1,0.2,0.4,0.3]))]

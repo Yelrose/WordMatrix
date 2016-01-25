@@ -97,17 +97,24 @@ cdef void our_saxpy_noblas(const int *N, const float *alpha, const float *X, con
 
 cdef void fast_sentence_sg_hs(
     const np.uint32_t *word_point, const np.uint8_t *word_code, const int codelen,
-    REAL_t * syn0,REAL_t *syn0P,REAL_t * syn0Q, REAL_t *syn1, const int vector_size,const int topic_size,
+    REAL_t *syn0, REAL_t *syn1, const int vector_size,const int topic_size,
     const REAL_t * context_vector,
     const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work,REAL_t * neu1, REAL_t *word_locks) nogil:
 
     cdef long long a, b
+    cdef int tp
     cdef long long row1 = word2_index * vector_size * topic_size, row2
     cdef REAL_t f, g
     cdef char trans = <char >'c'
     memset(neu1,0,vector_size*cython.sizeof(REAL_t))
     memset(work, 0, vector_size * cython.sizeof(REAL_t))
-    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
+    #sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
+    printf("------\n")
+    for tp in range(topic_size):
+        printf("%.2lf ",context_vector)
+        if context_vector[tp] > 0:
+            our_saxpy(&vector_size,&context_vector[tp],&syn0[row1+tp*topic_size],&ONE,neu1,&ONE)
+
     for b in range(codelen):
         row2 = word_point[b] *vector_size
         f = our_dot(&vector_size, neu1, &ONE, &syn1[row2], &ONE)
@@ -117,7 +124,10 @@ cdef void fast_sentence_sg_hs(
         g = (1 - word_code[b] - f) * alpha
         our_saxpy(&vector_size, &g, &syn1[row2], &ONE, work, &ONE)
         our_saxpy(&vector_size, &g, neu1, &ONE, &syn1[row2], &ONE)
-    sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
+    #sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
+    for tp in range(topic_size):
+        if context_vector[tp] > 0:
+            our_saxpy(&vector_size,&context_vector[tp],work,&ONE,&syn0[row1+tp*topic_size],&ONE)
 
 
 # to support random draws from negative-sampling cum_table
@@ -140,8 +150,8 @@ cdef inline unsigned long long random_int32(unsigned long long *next_random) nog
 
 cdef unsigned long long fast_sentence_sg_neg(
     const int negative, np.uint32_t *cum_table, unsigned long long cum_table_len,
-    REAL_T* syn0,REAL_t *syn0P,RAEL_t * syn0Q, REAL_t *syn1neg, const int vector_size,const int topic_size,REAL_t* context_vector, const np.uint32_t word_index,
-    const np.uin32_t word2_index, const REAL_t alpha, REAL_t *work,REAL_t *neu1,
+    REAL_t *syn0, REAL_t *syn1neg, const int vector_size,const int topic_size,REAL_t* context_vector, const np.uint32_t word_index,
+    const np.uint32_t word2_index, const REAL_t alpha, REAL_t *work,REAL_t *neu1,
     unsigned long long next_random, REAL_t *word_locks) nogil:
 
     cdef long long a
@@ -294,8 +304,6 @@ def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
     cdef int sample = (model.sample != 0)
 
     cdef REAL_t *syn0 = <REAL_t *>(np.PyArray_DATA(model.syn0))
-    cdef REAL_t *syn0P = <REAL_t* >(np.PyArray_DATA(model.syn0P))
-    cdef REAL_t *syn0Q = <REAL_t* >(np.PyArray_DATA(model.syn0Q))
     cdef REAL_t *context_vector= <REAL_t *>(np.PyArray_DATA(topic_vector))
     cdef REAL_t *word_locks = <REAL_t *>(np.PyArray_DATA(model.syn0_lockf))
     cdef REAL_t *work= <REAL_t *>(np.PyArray_DATA(_work))
@@ -303,8 +311,6 @@ def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
     cdef REAL_t _alpha = alpha
     cdef int vector_size = model.vector_size
     cdef int topic_size = model.topic_size
-    cdef int hidden = model.hidden
-
 
     cdef int codelens[MAX_SENTENCE_LEN]
     cdef np.uint32_t indexes[MAX_SENTENCE_LEN]
@@ -376,8 +382,8 @@ def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
             tot_topic =  k - j
             if k > sentence_len:
                 k =  sentence_len
-                for j in range(j,k):
-                    context_vector[topic[j]] += 1.0 / tot_topic
+            for j in range(j,k):
+                context_vector[topic[j]] += 1.0 / tot_topic
 
             j = i - window + reduced_windows[i]
             if j < 0:
@@ -389,9 +395,9 @@ def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
                 if j == i:
                     continue
                 if hs:
-                    fast_sentence_sg_hs(points[j], codes[j], codelens[j], syn0,syn0P,syn0Q,syn1, vector_size,topic_size,context_vector, indexes[i], _alpha, work,neu1, word_locks)
+                    fast_sentence_sg_hs(points[j], codes[j], codelens[j], syn0, syn1, vector_size,topic_size,context_vector, indexes[i], _alpha, work,neu1, word_locks)
                 if negative:
-                    next_random = fast_sentence_sg_neg(negative, cum_table, cum_table_len,syn0, syn0P,syn0Q, syn1neg, vector_size,topic_size,context_vector, indexes[j], indexes[i], _alpha, work,neu1, next_random, word_locks)
+                    next_random = fast_sentence_sg_neg(negative, cum_table, cum_table_len, syn0, syn1neg, vector_size,topic_size,context_vector, indexes[j], indexes[i], _alpha, work,neu1, next_random, word_locks)
 
     return result
 

@@ -372,8 +372,8 @@ def train_sentence_sg(model, sentence,topic_vector, alpha, _work,_neu1):
             tot_topic =  k - j
             if k > sentence_len:
                 k =  sentence_len
-                for j in range(j,k):
-                    context_vector[topic[j]] += 1.0 / tot_topic
+            for j in range(j,k):
+                context_vector[topic[j]] += 1.0 / tot_topic
 
             j = i - window + reduced_windows[i]
             if j < 0:
