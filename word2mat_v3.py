@@ -679,7 +679,7 @@ class Word2Mat(utils.SaveLoad):
          Accept a single (word,context) or a list of (word,context)s as input
         """
         word,context_vector =  word_context
-        return self.syn0[self.vocab[word].index].reshape(self.vector_size,self.topic_size).dot(context_vector)
+        return self.syn0[self.vocab[word].index].reshape(self.topic_size,self.vector_size).T.dot(context_vector)
 
 
 
