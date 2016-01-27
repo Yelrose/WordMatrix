@@ -153,6 +153,7 @@ cdef unsigned long long fast_sentence_sg_neg(
     unsigned long long next_random, REAL_t *word_locks) nogil:
 
     cdef long long a
+    cdef int tp
     cdef long long row1 = word2_index * vector_size*topic_size, row2
     cdef unsigned long long modulo = 281474976710655ULL
     cdef REAL_t f, g, label
@@ -162,7 +163,10 @@ cdef unsigned long long fast_sentence_sg_neg(
     memset(work, 0, vector_size * cython.sizeof(REAL_t))
     memset(neu1, 0,  vector_size * cython.sizeof(REAL_t))
     cdef char trans = <char> 'c'
-    sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
+    #sgemv(&trans,&topic_size,&vector_size,&ONEF,&syn0[row1],&topic_size,context_vector,&ONE,&ONEF,neu1,&ONE)
+    for tp in range(topic_size):
+        if context_vector[tp] > 0:
+            our_saxpy(&vector_size,&context_vector[tp],&syn0[row1+tp*topic_size],&ONE,neu1,&ONE)
     for d in range(negative+1):
         if d == 0:
             target_index = word_index
@@ -183,8 +187,11 @@ cdef unsigned long long fast_sentence_sg_neg(
         g = (label - f) * alpha
         our_saxpy(&vector_size, &g, &syn1neg[row2], &ONE, work, &ONE)
         our_saxpy(&vector_size, &g, neu1, &ONE, &syn1neg[row2], &ONE)
-    sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
+    #sger(&topic_size,&vector_size,&ONEF,context_vector,&ONE,work,&ONE,&syn0[row1],&topic_size)
 
+    for tp in range(topic_size):
+        if context_vector[tp] > 0:
+            our_saxpy(&vector_size,&context_vector[tp],work,&ONE,&syn0[row1+tp*topic_size],&ONE)
     return next_random
 
 
